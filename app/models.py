@@ -40,3 +40,10 @@ class Embedding(Base):
     model_name = Column(String, nullable=False)
 
     chunk = relationship("Chunk", back_populates="embedding")
+
+class BenchmarkVector(Base):
+    __tablename__ = "benchmark_vectors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(1024), nullable=False)
