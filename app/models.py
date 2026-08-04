@@ -36,7 +36,7 @@ class Embedding(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     chunk_id = Column(UUID(as_uuid=True), ForeignKey("chunks.id"), nullable=False, unique=True)
-    embedding = Column(Vector(1536), nullable=False)
+    embedding = Column(Vector(1024), nullable=False)
     model_name = Column(String, nullable=False)
 
     chunk = relationship("Chunk", back_populates="embedding")
