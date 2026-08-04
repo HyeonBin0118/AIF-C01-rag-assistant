@@ -1,0 +1,11 @@
+index_type,params,build_time_sec,median_latency_ms,p95_latency_ms,avg_recall
+Brute-force,-,0,136.45,141.72,1.0
+HNSW,"m=8, ef_construction=32, ef_search=20",8.51,0.79,1.29,0.927
+HNSW,"m=8, ef_construction=32, ef_search=100",9.05,1.81,3.16,0.978
+HNSW,"m=16, ef_construction=64, ef_search=20",26.5,1.1,1.91,0.986
+HNSW,"m=16, ef_construction=64, ef_search=100",26.35,3.12,5.41,1.0
+HNSW,"m=32, ef_construction=128, ef_search=100",95.79,4.59,6.93,1.0
+IVFFlat,"lists=100, probes=1",2.4,0.91,1.62,0.626
+IVFFlat,"lists=100, probes=10",2.43,6.2,9.57,0.958
+IVFFlat,"lists=200, probes=10",3.06,5.55,9.03,0.936
+IVFFlat,"lists=200, probes=20",3.25,7.47,18.14,0.962

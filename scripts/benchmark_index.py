@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import statistics
+import csv
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -188,6 +189,23 @@ def print_results_table(results):
     print("=" * 115)
 
 
+def save_results_csv(results, path="data/benchmark_results.csv"):
+    full_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), path
+    )
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+
+    with open(full_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["index_type", "params", "build_time_sec", "median_latency_ms", "p95_latency_ms", "avg_recall"],
+        )
+        writer.writeheader()
+        writer.writerows(results)
+
+    print(f"\n결과 저장됨: {full_path}")
+
+
 def run_benchmark():
     with engine.connect() as conn:
         print(f"쿼리 샘플 {N_QUERIES}개 추출 중...")
@@ -241,4 +259,5 @@ def run_benchmark():
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    results = run_benchmark()
+    save_results_csv(results)
