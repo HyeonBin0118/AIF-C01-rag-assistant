@@ -13,12 +13,12 @@ RAG(Retrieval-Augmented Generation)는 LLM이 답변할 때 학습하지 못한 
 ## 아키텍처
 
 ```
-documents (PART 단위, 25개)
-  └── chunks (섹션/서비스 단위, 172개)
+documents (PART 단위, 청킹 전략별로 구분)
+  └── chunks (청킹 전략에 따라 분리 방식이 다름)
         └── embeddings (청크당 벡터 1개, 1024차원)
 ```
 
-세 테이블로 정규화한 이유는 임베딩 모델을 바꿔서 재실험할 때 chunks 이하 구조를 건드리지 않고 embeddings만 새로 채울 수 있게 하기 위함입니다. 실제로 임베딩 모델을 변경하며 이 구조 덕을 봤습니다.
+세 테이블로 정규화한 이유는 임베딩 모델을 바꾸거나 청킹 전략을 추가할 때 기존 구조를 건드리지 않고 확장할 수 있게 하기 위함입니다. `documents.chunking_strategy` 컬럼으로 구조 기반(structural) / 고정 크기(fixed) / 의미 기반(semantic) 세 가지 청킹 결과를 같은 스키마 안에 공존시켜, 서로 다른 원본 데이터 없이도 전략 간 비교 실험이 가능하도록 설계했습니다.
 
 ## 기술 스택
 
@@ -77,6 +77,34 @@ documents (PART 단위, 25개)
 - **빌드 비용**: 반대로 인덱스 구축 비용은 IVFFlat이 압도적으로 저렴합니다(2~3초 vs HNSW 최대 95.8초).
 - **선택 기준**: 데이터가 자주 바뀌지 않는 서비스(본 프로젝트처럼 정적 스터디 자료 기반)라면 HNSW가 유리하고, 데이터가 실시간으로 추가·삭제되어 인덱스 재빌드가 잦은 서비스라면 빌드 비용이 낮은 IVFFlat이 더 실용적일 수 있습니다.
 
+## 실험 2: 청킹 전략 비교
+
+### 방법
+
+원본 문서(PART 1~25)를 세 가지 방식으로 각각 청킹해 별도로 저장했습니다.
+
+- **구조 기반(Structural)**: 문서에 원래 있던 `##`/`###` 헤더를 그대로 따라 분리 (172개 청크, 실험 1에서 사용한 방식)
+- **Fixed-size**: 헤더 무시하고 400자 단위로 분리, 앞뒤 50자 overlap (186개 청크)
+- **Semantic**: 줄 단위 임베딩 후 인접 줄 간 코사인 거리가 급증하는 지점(상위 10% 퍼센타일)을 경계로 분리 (158개 청크)
+
+평가는 질문 20개(`data/eval_questions.json`)를 직접 구성해, 각 전략별로 검색된 상위 청크에 정답 키워드가 포함되는지(Recall@3, Recall@5)로 측정했습니다.
+
+### 결과
+
+| 전략 | Recall@3 | Recall@5 |
+|---|---|---|
+| 구조 기반 | 100% (20/20) | 100% (20/20) |
+| Fixed-size | 95% (19/20) | 100% (20/20) |
+| Semantic | 90% (18/20) | 100% (20/20) |
+
+![청킹 전략 비교](data/chunking_strategy_comparison.png)
+
+### 결론
+
+top-5까지 넉넉히 보면 세 전략 모두 정답을 놓치지 않지만, top-3처럼 검색 범위를 좁힌 조건에서는 **구조 기반 청킹이 가장 안정적**이었습니다. 원본 데이터가 "서비스 하나 = 설명 한 덩어리"로 이미 잘 구조화되어 있어, 그 경계를 그대로 따르는 방식이 질문-정답 매칭에 가장 유리했던 것으로 해석됩니다. Fixed-size와 semantic은 구조를 무시하고 자르는 과정에서 정답 내용이 청크 경계에서 분리되는 경우가 발생해 근소하게 낮은 결과를 보였습니다.
+
+**한계**: 평가 질문이 20개로 표본이 작아, 95%/90%의 차이는 각각 1문제 차이에 불과합니다. 통계적으로 유의미한 차이라 단정하기보다는 "제한된 표본에서 관찰된 경향"으로 해석하는 것이 정확합니다. 다만 이 결과는 "원본 데이터가 이미 구조화되어 있다면, 그 구조를 활용하는 청킹이 일반적인 fixed-size 방식보다 우위를 가질 수 있다"는 방향성은 뒷받침합니다.
+
 ## 실행 방법
 
 ```bash
@@ -88,9 +116,11 @@ pip install -r requirements.txt
 # 2. DB 실행
 docker compose up -d
 
-# 3. DB 초기화 및 데이터 적재
+# 3. DB 초기화 및 데이터 적재 (세 가지 청킹 전략 모두)
 python scripts/init_db.py
-python scripts/ingest.py
+python scripts/ingest.py             # 구조 기반
+python scripts/ingest_fixed.py       # Fixed-size
+python scripts/ingest_semantic.py    # Semantic
 python scripts/embed.py
 
 # 4. 검색 테스트
@@ -101,6 +131,10 @@ python scripts/download_benchmark_data.py
 python scripts/embed_benchmark.py
 python scripts/benchmark_index.py
 python scripts/plot_benchmark.py
+
+# 6. (선택) 청킹 전략 비교 재현
+python scripts/evaluate_chunking.py
+python scripts/plot_chunking_eval.py
 ```
 
 ## 프로젝트 구조
@@ -111,27 +145,34 @@ AIF-C01-rag-assistant/
 ├── requirements.txt
 ├── app/
 │   ├── database.py
-│   └── models.py          # Document / Chunk / Embedding / BenchmarkVector
+│   └── models.py                  # Document / Chunk / Embedding / BenchmarkVector
 ├── data/
-│   ├── raw/                # 원본 마크다운, 벤치마크 코퍼스 (git 미포함)
+│   ├── raw/                        # 원본 마크다운, 벤치마크 코퍼스 (git 미포함)
+│   ├── eval_questions.json         # 청킹 전략 평가용 질문-정답 쌍
 │   ├── benchmark_results.csv
-│   └── benchmark_recall_vs_latency.png
+│   ├── benchmark_recall_vs_latency.png
+│   ├── chunking_evaluation.csv
+│   └── chunking_strategy_comparison.png
 └── scripts/
     ├── init_db.py
-    ├── ingest.py            # 계층적 청킹 (PART → 섹션 → 서비스)
+    ├── ingest.py                   # 구조 기반 청킹 (PART → 섹션 → 서비스)
+    ├── ingest_fixed.py             # Fixed-size 청킹
+    ├── ingest_semantic.py          # Semantic 청킹
     ├── embed.py
     ├── check_data.py
     ├── search.py
     ├── download_benchmark_data.py
     ├── embed_benchmark.py
     ├── benchmark_index.py
-    └── plot_benchmark.py
+    ├── plot_benchmark.py
+    ├── evaluate_chunking.py
+    └── plot_chunking_eval.py
 ```
 
 ## 진행 상황
 
 - [x] Phase 1: DB 스키마 설계 및 인덱스 파라미터 벤치마크
-- [ ] Phase 2: 청킹 전략 비교 (구조 기반 vs fixed-size vs semantic)
+- [x] Phase 2: 청킹 전략 비교 (구조 기반 vs fixed-size vs semantic)
 - [ ] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
 - [ ] Phase 4: Reranking (Cross-encoder)
 - [ ] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
