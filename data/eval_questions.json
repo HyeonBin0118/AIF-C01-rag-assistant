@@ -1,0 +1,22 @@
+[
+  {"question": "PII 탐지하는 서비스는?", "keywords": ["Comprehend", "Macie", "Guardrails"]},
+  {"question": "이미지에서 텍스트를 추출하는 서비스는?", "keywords": ["Textract"]},
+  {"question": "RAG용 임베딩 저장에 쓰는 AWS 벡터 DB는?", "keywords": ["OpenSearch"]},
+  {"question": "그래프 기반 데이터베이스로 사기 탐지에 쓰이는 서비스는?", "keywords": ["Neptune"]},
+  {"question": "생성형 AI 응답에서 유해 콘텐츠를 필터링하는 기능은?", "keywords": ["Guardrails"]},
+  {"question": "모델의 편향과 설명 가능성을 다루는 SageMaker 도구는?", "keywords": ["Clarify"]},
+  {"question": "데이터 라벨링 작업을 관리하는 서비스는?", "keywords": ["Ground Truth"]},
+  {"question": "완전 서버리스로 여러 파운데이션 모델을 API로 쓸 수 있게 해주는 서비스는?", "keywords": ["Bedrock"]},
+  {"question": "AWS API 호출 이력을 감사하는 서비스는?", "keywords": ["CloudTrail"]},
+  {"question": "리소스 성능 지표와 알람을 모니터링하는 서비스는?", "keywords": ["CloudWatch"]},
+  {"question": "EC2 취약점을 자동으로 스캔하는 서비스는?", "keywords": ["Inspector"]},
+  {"question": "회귀 모델 평가에서 오차 제곱 평균의 제곱근을 구하는 지표는?", "keywords": ["RMSE"]},
+  {"question": "환경 영향과 에너지 효율을 강조하는 EC2 인스턴스 시리즈는?", "keywords": ["Trainium", "Trn"]},
+  {"question": "합성 데이터를 생성자와 판별자의 경쟁 구조로 만드는 모델은?", "keywords": ["GAN"]},
+  {"question": "정형 데이터 예측에 강한 그래디언트 부스팅 알고리즘은?", "keywords": ["XGBoost"]},
+  {"question": "큰 교사 모델의 지식을 작은 학생 모델로 압축하는 기법은?", "keywords": ["증류", "Distillation"]},
+  {"question": "실시간 추론과 서버리스 추론의 최대 페이로드 차이는?", "keywords": ["25MB", "4MB", "서버리스"]},
+  {"question": "클래스 불균형 상황에서 recall과 precision을 종합 평가하는 지표는?", "keywords": ["F1"]},
+  {"question": "쿠버네티스 기반 컨테이너 오케스트레이션 서비스는?", "keywords": ["EKS"]},
+  {"question": "서버 관리 없이 코드만 올리면 실행되는 서버리스 컴퓨팅 서비스는?", "keywords": ["Lambda"]}
+]

@@ -13,6 +13,7 @@ class Document(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title = Column(String, nullable=False)
     source_type = Column(String, nullable=False)  # 'part_note' or 'wrong_answer_note'
+    chunking_strategy = Column(String, nullable=False, default="structural")  # 'structural' | 'fixed' | 'semantic'
     created_at = Column(DateTime, default=datetime.utcnow)
 
     chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
@@ -40,6 +41,7 @@ class Embedding(Base):
     model_name = Column(String, nullable=False)
 
     chunk = relationship("Chunk", back_populates="embedding")
+
 
 class BenchmarkVector(Base):
     __tablename__ = "benchmark_vectors"

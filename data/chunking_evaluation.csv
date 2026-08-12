@@ -1,0 +1,7 @@
+strategy,top_k,hits,total,recall
+structural,3,20,20,1.0
+structural,5,20,20,1.0
+fixed,3,19,20,0.95
+fixed,5,20,20,1.0
+semantic,3,18,20,0.9
+semantic,5,20,20,1.0
