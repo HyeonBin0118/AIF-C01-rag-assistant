@@ -1,0 +1,7 @@
+method,top_k,hits,total,recall
+vector,3,17,20,0.85
+bm25,3,17,20,0.85
+hybrid,3,18,20,0.9
+vector,5,18,20,0.9
+bm25,5,18,20,0.9
+hybrid,5,18,20,0.9
