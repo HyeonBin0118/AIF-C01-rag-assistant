@@ -2,7 +2,7 @@
 
 AWS AIF-C01 자격증 스터디 중 정리한 노트(문제 오류 검증·정정 내용 포함)를 기반으로 한 RAG 시스템입니다.
 
-이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
+이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
 
 ## 왜 이 프로젝트를 시작했나
 
@@ -25,6 +25,7 @@ documents (PART 단위, 청킹 전략별로 구분)
 - **DB**: PostgreSQL 16 + pgvector (Docker)
 - **임베딩 모델**: BAAI/bge-m3 (1024차원, GPU 추론)
 - **ORM**: SQLAlchemy
+- **키워드 검색**: rank_bm25 + kiwipiepy (한국어 형태소 분석)
 - **벤치마크**: 위키피디아 한국어 코퍼스 5만 건 (별도 테이블, 실 서비스 데이터와 분리)
 
 ## 핵심 의사결정
@@ -105,6 +106,37 @@ top-5까지 넉넉히 보면 세 전략 모두 정답을 놓치지 않지만, to
 
 **한계**: 평가 질문이 20개로 표본이 작아, 95%/90%의 차이는 각각 1문제 차이에 불과합니다. 통계적으로 유의미한 차이라 단정하기보다는 "제한된 표본에서 관찰된 경향"으로 해석하는 것이 정확합니다. 다만 이 결과는 "원본 데이터가 이미 구조화되어 있다면, 그 구조를 활용하는 청킹이 일반적인 fixed-size 방식보다 우위를 가질 수 있다"는 방향성은 뒷받침합니다.
 
+## 실험 3: 하이브리드 검색 (BM25 + 벡터, RRF)
+
+### 방법
+
+벡터 검색(의미 기반)만으로는 정확한 숫자·파라미터명·축약어 같은 "문자열 일치가 중요한" 질문에 약할 수 있다는 가설을 세우고, 통계 기반 키워드 검색(BM25)과 결합한 하이브리드 검색을 직접 구현했습니다.
+
+- **BM25**: `rank_bm25` 라이브러리 사용, 한국어 형태소 분석은 `kiwipiepy`로 처리(명사/동사/영단어/숫자 토큰만 추출)
+- **RRF(Reciprocal Rank Fusion)**: 벡터 검색과 BM25 검색 각각의 순위(점수 아님)를 `1 / (k + rank)` 공식으로 합산해 최종 순위 산출 (k=60)
+- 구조 기반(structural) 청킹 172개를 대상으로 진행
+
+평가 질문셋을 두 그룹으로 나눠 구성했습니다: 정확한 문자열이 중요한 질문 10개(예: "실시간 추론의 최대 페이로드 크기는?") + 의미 기반 질문 10개(예: "PII 탐지하는 서비스는?"). 처음엔 Phase 2에서 쓴 의미 기반 질문만으로 평가했으나 세 방식 모두 100%로 차이가 드러나지 않아, 벡터 검색이 약할 만한 유형을 의도적으로 추가해 재구성했습니다.
+
+### 결과
+
+| 방식 | Recall@3 | Recall@5 |
+|---|---|---|
+| 벡터 단독 | 85% (17/20) | 90% (18/20) |
+| BM25 단독 | 85% (17/20) | 90% (18/20) |
+| 하이브리드(RRF) | 90% (18/20) | 90% (18/20) |
+
+**개선 사례** (top-3 기준, 한쪽만으로는 실패했을 질문을 하이브리드가 보완):
+
+- *"XGBoost의 X는 무엇의 약자인가?"* — 벡터 검색은 적중했으나 BM25는 실패. 하이브리드는 벡터 결과를 살려 적중.
+- *"BERT가 학습에 사용하는 방식의 약자는?"* — 반대로 BM25는 적중했으나 벡터 검색은 실패. 하이브리드는 BM25 결과를 살려 적중.
+
+### 결론
+
+top-3 기준으로 하이브리드가 단독 방식 대비 5%p 개선(85%→90%)을 보였고, 위 두 사례처럼 "한쪽이 놓친 것을 다른 쪽이 보완하는" 상호작용이 실제로 관찰됐습니다. 다만 top-5까지 넓히면 세 방식 모두 90%로 수렴해, 후보군을 넉넉히 볼 경우 개별 방식만으로도 충분할 수 있다는 점도 함께 확인했습니다. 즉 하이브리드 검색은 **검색 범위가 좁을수록(정확도가 중요한 상황일수록)** 효과가 커지는 경향을 보였습니다.
+
+**한계**: 평가 질문 20개, 청크 172개라는 소규모 실험이라 이 경향이 대규모 데이터에서도 유지되는지는 별도 검증이 필요합니다.
+
 ## 실행 방법
 
 ```bash
@@ -125,6 +157,7 @@ python scripts/embed.py
 
 # 4. 검색 테스트
 python scripts/search.py "RAG용 임베딩 모델은 뭘 써야해"
+python scripts/hybrid_search.py "SageMaker Ground Truth 라벨링 방법"
 
 # 5. (선택) 인덱스 벤치마크 재현
 python scripts/download_benchmark_data.py
@@ -135,6 +168,10 @@ python scripts/plot_benchmark.py
 # 6. (선택) 청킹 전략 비교 재현
 python scripts/evaluate_chunking.py
 python scripts/plot_chunking_eval.py
+
+# 7. (선택) 하이브리드 검색 평가 재현
+python scripts/evaluate_hybrid.py
+python scripts/analyze_hybrid_gains.py
 ```
 
 ## 프로젝트 구조
@@ -149,10 +186,12 @@ AIF-C01-rag-assistant/
 ├── data/
 │   ├── raw/                        # 원본 마크다운, 벤치마크 코퍼스 (git 미포함)
 │   ├── eval_questions.json         # 청킹 전략 평가용 질문-정답 쌍
+│   ├── eval_questions_hybrid.json  # 하이브리드 검색 평가용 질문-정답 쌍
 │   ├── benchmark_results.csv
 │   ├── benchmark_recall_vs_latency.png
 │   ├── chunking_evaluation.csv
-│   └── chunking_strategy_comparison.png
+│   ├── chunking_strategy_comparison.png
+│   └── hybrid_evaluation.csv
 └── scripts/
     ├── init_db.py
     ├── ingest.py                   # 구조 기반 청킹 (PART → 섹션 → 서비스)
@@ -166,14 +205,17 @@ AIF-C01-rag-assistant/
     ├── benchmark_index.py
     ├── plot_benchmark.py
     ├── evaluate_chunking.py
-    └── plot_chunking_eval.py
+    ├── plot_chunking_eval.py
+    ├── hybrid_search.py            # BM25 + 벡터 + RRF 하이브리드 검색
+    ├── evaluate_hybrid.py
+    └── analyze_hybrid_gains.py
 ```
 
 ## 진행 상황
 
 - [x] Phase 1: DB 스키마 설계 및 인덱스 파라미터 벤치마크
 - [x] Phase 2: 청킹 전략 비교 (구조 기반 vs fixed-size vs semantic)
-- [ ] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
+- [x] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
 - [ ] Phase 4: Reranking (Cross-encoder)
 - [ ] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
 - [ ] Phase 6: RAGAs 기반 정량 평가
