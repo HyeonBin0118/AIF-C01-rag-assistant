@@ -4,4 +4,13 @@ __pycache__/
 .env
 data/raw/
 .vscode/
+*.logvenv/
+__pycache__/
+*.pyc
+.env
+data/raw/
+.vscode/
 *.log
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/

@@ -1,5 +1,20 @@
+# --- DB / ORM ---
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 pgvector==0.2.5
 python-dotenv==1.0.1
 alembic==1.13.1
+
+# --- 임베딩 / 검색 ---
+sentence-transformers>=3.0.0
+rank_bm25>=0.2.2
+kiwipiepy>=0.18.0
+
+# --- 벤치마크 데이터 ---
+datasets>=2.19.0
+
+# --- 시각화 ---
+matplotlib>=3.8.0
+
+# --- PyTorch는 GPU 버전 별도 설치 필요 (requirements.txt로 설치 시 CPU 버전이 깔릴 수 있음) ---
+# pip install "torch>=2.6.0" --index-url https://download.pytorch.org/whl/cu124
