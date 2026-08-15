@@ -137,6 +137,34 @@ top-3 기준으로 하이브리드가 단독 방식 대비 5%p 개선(85%→90%)
 
 **한계**: 평가 질문 20개, 청크 172개라는 소규모 실험이라 이 경향이 대규모 데이터에서도 유지되는지는 별도 검증이 필요합니다.
 
+## 실험 4: Reranking (Cross-encoder)
+
+### 방법
+
+하이브리드 검색(Bi-encoder 방식)으로 뽑은 1차 후보(top-15)를, `BAAI/bge-reranker-v2-m3`(Cross-encoder)로 질문과 문서를 함께 넣어 재채점해 순위를 재배열했습니다. Bi-encoder는 질문과 문서를 각각 독립적으로 벡터화해 빠르지만 정밀도에 한계가 있고, Cross-encoder는 둘을 함께 넣어 느리지만 훨씬 정밀하게 관련성을 판단합니다. 이 두 단계를 결합하는 것이 reranking의 표준적인 접근입니다.
+
+### 지표 전환: Recall@k → MRR
+
+처음엔 Phase 2·3과 동일하게 Recall@k로 평가했으나, 하이브리드 검색만으로 이미 대부분 정답이 top-3 안에 들어와 있어 reranking 전후로 Recall 값에 차이가 없었습니다. Recall@k는 "정답이 순위 안에 있는지"만 보는 이진 지표라, "5위였던 정답이 1위로 올라갔다"는 개선을 반영하지 못하는 한계가 있었습니다. 이에 정답이 정확히 몇 위에 나왔는지를 점수화하는 **MRR(Mean Reciprocal Rank, `1/정답순위`의 평균)**로 지표를 전환했습니다.
+
+### 결과
+
+| 방식 | MRR |
+|---|---|
+| 하이브리드 단독 | 0.8500 |
+| 하이브리드 + Reranking | 0.9000 |
+
+**개선 사례** (하이브리드 순위 → Reranking 후 순위):
+
+- *"BERT가 학습에 사용하는 방식의 약자는?"* — 2위 → 1위
+- *"Bedrock Guardrails의 필터 정책은 몇 가지인가?"* — 2위 → 1위
+
+### 결론
+
+Reranking은 "정답을 top-k 안에 들어오게 하는" 효과보다는, **이미 후보군 안에 있는 정답의 순위를 더 정확하게 끌어올리는** 효과가 뚜렷했습니다. 이는 실제 RAG 서비스에서 LLM에 넘기는 컨텍스트 개수가 제한적일 때(예: top-3만 사용) 특히 유효한데, 애매하게 2~3위에 있던 정답이 확실한 1위로 올라오면 LLM이 더 명확한 근거를 우선적으로 참고할 수 있기 때문입니다.
+
+**한계**: 마찬가지로 질문 20개 규모의 소규모 평가이며, Cross-encoder는 후보 하나하나를 개별 채점하는 방식이라 후보 수·질문 수가 늘어날수록 지연시간 비용이 커집니다. 실서비스 적용 시 이 비용과 순위 개선 효과 사이의 트레이드오프를 고려해야 합니다.
+
 ## 실행 방법
 
 ```bash
@@ -209,6 +237,8 @@ AIF-C01-rag-assistant/
     ├── hybrid_search.py            # BM25 + 벡터 + RRF 하이브리드 검색
     ├── evaluate_hybrid.py
     └── analyze_hybrid_gains.py
+    ├── rerank_search.py         # Cross-encoder 기반 reranking
+    ├── evaluate_rerank.py       # MRR 기반 정량 평가
 ```
 
 ## 진행 상황
@@ -216,6 +246,6 @@ AIF-C01-rag-assistant/
 - [x] Phase 1: DB 스키마 설계 및 인덱스 파라미터 벤치마크
 - [x] Phase 2: 청킹 전략 비교 (구조 기반 vs fixed-size vs semantic)
 - [x] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
-- [ ] Phase 4: Reranking (Cross-encoder)
+- [x] Phase 4: Reranking (Cross-encoder)
 - [ ] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
 - [ ] Phase 6: RAGAs 기반 정량 평가
