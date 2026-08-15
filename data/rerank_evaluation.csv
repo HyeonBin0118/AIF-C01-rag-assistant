@@ -1,0 +1,3 @@
+method,mrr
+hybrid_only,0.85
+hybrid_rerank,0.9
