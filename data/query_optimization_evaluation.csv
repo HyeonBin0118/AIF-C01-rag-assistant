@@ -1,0 +1,4 @@
+method,mrr
+hybrid_only,0.85
+query_rewrite,0.875
+hyde,0.9
