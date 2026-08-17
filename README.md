@@ -2,7 +2,7 @@
 
 AWS AIF-C01 자격증 스터디 중 정리한 노트(문제 오류 검증·정정 내용 포함)를 기반으로 한 RAG 시스템입니다.
 
-이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
+이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완, 쿼리 자체를 최적화하는 기법들 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
 
 ## 왜 이 프로젝트를 시작했나
 
@@ -26,6 +26,8 @@ documents (PART 단위, 청킹 전략별로 구분)
 - **임베딩 모델**: BAAI/bge-m3 (1024차원, GPU 추론)
 - **ORM**: SQLAlchemy
 - **키워드 검색**: rank_bm25 + kiwipiepy (한국어 형태소 분석)
+- **Reranking**: BAAI/bge-reranker-v2-m3 (Cross-encoder)
+- **쿼리 최적화**: OpenAI API (gpt-4o-mini) — Query Rewriting, HyDE
 - **벤치마크**: 위키피디아 한국어 코퍼스 5만 건 (별도 테이블, 실 서비스 데이터와 분리)
 
 ## 핵심 의사결정
@@ -41,6 +43,10 @@ documents (PART 단위, 청킹 전략별로 구분)
 ### 3. 인덱스 벤치마크 방법론: 합성 데이터 대신 공개 코퍼스
 
 인덱스(HNSW/IVFFlat)는 데이터가 대량일 때 효과가 드러나는데, 실제 서비스 데이터는 172개뿐이라 벤치마크가 무의미했습니다. 처음엔 무작위로 생성한 텍스트를 대량으로 채워 넣는 방식을 고려했으나, "가짜 데이터로 결과를 부풀렸다"는 인상을 줄 수 있어 기각했습니다. 대신 위키피디아 한국어 코퍼스(공개 데이터셋)로 대체해, `ann-benchmarks` 같은 업계 표준 벤치마크 방법론을 참고했습니다.
+
+### 4. 쿼리 최적화 모델: 로컬 LLM 대신 OpenAI API
+
+Query Rewriting과 HyDE는 텍스트 "생성"이 필요한 단계입니다. 로컬 GPU(RTX 3060)로 소형 LLM을 직접 돌리는 방법도 고려했으나, 평가 질문 20개 규모의 실험에서는 API 비용이 미미한 반면 생성 품질과 개발 속도 면에서 이점이 커 OpenAI API(gpt-4o-mini)를 선택했습니다.
 
 ## 실험 1: 벡터 인덱스 파라미터 벤치마크
 
@@ -165,6 +171,29 @@ Reranking은 "정답을 top-k 안에 들어오게 하는" 효과보다는, **이
 
 **한계**: 마찬가지로 질문 20개 규모의 소규모 평가이며, Cross-encoder는 후보 하나하나를 개별 채점하는 방식이라 후보 수·질문 수가 늘어날수록 지연시간 비용이 커집니다. 실서비스 적용 시 이 비용과 순위 개선 효과 사이의 트레이드오프를 고려해야 합니다.
 
+## 실험 5: 쿼리 최적화 (Query Rewriting, HyDE)
+
+### 방법
+
+- **Query Rewriting (Multi-query)**: OpenAI(`gpt-4o-mini`)로 원본 질문을 표현이 다른 질문 2개로 확장한 뒤, 원본을 포함한 3개 질문 각각으로 검색해 RRF로 통합
+- **HyDE (Hypothetical Document Embeddings)**: 질문을 그대로 임베딩하는 대신, LLM이 먼저 "그럴듯한 가상의 답변"을 생성하고 그 답변을 임베딩해 벡터 검색에 사용. "질문"과 "답변"의 문장 형태 차이로 인한 임베딩 공간 불일치를 완화하려는 의도
+
+평가는 `eval_questions_hybrid.json`(20문항)을 사용했고, 실험 4에서 확인한 대로 Recall@k는 순위 개선을 못 잡아내므로 처음부터 MRR로 측정했습니다.
+
+### 결과
+
+| 방식 | MRR |
+|---|---|
+| 하이브리드 단독 | 0.8500 |
+| Query Rewriting | 0.8750 |
+| HyDE | 0.9000 |
+
+### 결론
+
+두 기법 모두 하이브리드 단독보다 개선됐고, 그중 HyDE가 가장 효과적이었습니다(Reranking과 동일한 0.9000 달성). "질문을 그대로 검색하기보다, 질문에 대한 가상의 답변 형태로 변환해서 검색하는 것"이 이 데이터셋에서는 질문을 여러 버전으로 확장하는 것보다 더 유효했다고 해석됩니다. 다만 두 기법 모두 LLM 호출 비용과 지연시간이 추가되므로(질문당 API 호출 1~3회), 실서비스에서는 Reranking처럼 검색 후 단계에 비용을 쓸지, HyDE처럼 검색 전 단계에 비용을 쓸지 트레이드오프를 고려해야 합니다.
+
+**한계**: 동일하게 질문 20개 규모의 소규모 평가입니다.
+
 ## 실행 방법
 
 ```bash
@@ -173,33 +202,46 @@ conda create -n aif-rag python=3.11 -y
 conda activate aif-rag
 pip install -r requirements.txt
 
-# 2. DB 실행
+# 2. .env 파일 생성 (DB 접속 정보 + OpenAI API 키)
+# DATABASE_URL=postgresql://raguser:ragpassword@localhost:5432/aif_rag
+# OPENAI_API_KEY=your_key_here
+
+# 3. DB 실행
 docker compose up -d
 
-# 3. DB 초기화 및 데이터 적재 (세 가지 청킹 전략 모두)
+# 4. DB 초기화 및 데이터 적재 (세 가지 청킹 전략 모두)
 python scripts/init_db.py
 python scripts/ingest.py             # 구조 기반
 python scripts/ingest_fixed.py       # Fixed-size
 python scripts/ingest_semantic.py    # Semantic
 python scripts/embed.py
 
-# 4. 검색 테스트
+# 5. 검색 테스트
 python scripts/search.py "RAG용 임베딩 모델은 뭘 써야해"
 python scripts/hybrid_search.py "SageMaker Ground Truth 라벨링 방법"
+python scripts/rerank_search.py "SageMaker Ground Truth 라벨링 방법"
+python scripts/query_rewrite_search.py "SageMaker Ground Truth 라벨링 방법"
+python scripts/hyde_search.py "SageMaker Ground Truth 라벨링 방법"
 
-# 5. (선택) 인덱스 벤치마크 재현
+# 6. (선택) 인덱스 벤치마크 재현
 python scripts/download_benchmark_data.py
 python scripts/embed_benchmark.py
 python scripts/benchmark_index.py
 python scripts/plot_benchmark.py
 
-# 6. (선택) 청킹 전략 비교 재현
+# 7. (선택) 청킹 전략 비교 재현
 python scripts/evaluate_chunking.py
 python scripts/plot_chunking_eval.py
 
-# 7. (선택) 하이브리드 검색 평가 재현
+# 8. (선택) 하이브리드 검색 평가 재현
 python scripts/evaluate_hybrid.py
 python scripts/analyze_hybrid_gains.py
+
+# 9. (선택) Reranking 평가 재현
+python scripts/evaluate_rerank.py
+
+# 10. (선택) 쿼리 최적화 평가 재현
+python scripts/evaluate_query_optimization.py
 ```
 
 ## 프로젝트 구조
@@ -210,16 +252,21 @@ AIF-C01-rag-assistant/
 ├── requirements.txt
 ├── app/
 │   ├── database.py
-│   └── models.py                  # Document / Chunk / Embedding / BenchmarkVector
+│   ├── models.py                  # Document / Chunk / Embedding / BenchmarkVector
+│   └── llm_client.py               # OpenAI API 클라이언트
 ├── data/
 │   ├── raw/                        # 원본 마크다운, 벤치마크 코퍼스 (git 미포함)
 │   ├── eval_questions.json         # 청킹 전략 평가용 질문-정답 쌍
-│   ├── eval_questions_hybrid.json  # 하이브리드 검색 평가용 질문-정답 쌍
+│   ├── eval_questions_hybrid.json  # 하이브리드/reranking/쿼리최적화 평가용 질문-정답 쌍
 │   ├── benchmark_results.csv
 │   ├── benchmark_recall_vs_latency.png
 │   ├── chunking_evaluation.csv
 │   ├── chunking_strategy_comparison.png
-│   └── hybrid_evaluation.csv
+│   ├── hybrid_evaluation.csv
+│   ├── rerank_evaluation.csv
+│   ├── rerank_evaluation_detail.csv
+│   ├── query_optimization_evaluation.csv
+│   └── query_optimization_detail.csv
 └── scripts/
     ├── init_db.py
     ├── ingest.py                   # 구조 기반 청킹 (PART → 섹션 → 서비스)
@@ -236,9 +283,12 @@ AIF-C01-rag-assistant/
     ├── plot_chunking_eval.py
     ├── hybrid_search.py            # BM25 + 벡터 + RRF 하이브리드 검색
     ├── evaluate_hybrid.py
-    └── analyze_hybrid_gains.py
-    ├── rerank_search.py         # Cross-encoder 기반 reranking
-    ├── evaluate_rerank.py       # MRR 기반 정량 평가
+    ├── analyze_hybrid_gains.py
+    ├── rerank_search.py            # Cross-encoder 기반 reranking
+    ├── evaluate_rerank.py          # MRR 기반 정량 평가
+    ├── query_rewrite_search.py     # Multi-query 쿼리 재작성
+    ├── hyde_search.py              # HyDE
+    └── evaluate_query_optimization.py
 ```
 
 ## 진행 상황
@@ -247,5 +297,5 @@ AIF-C01-rag-assistant/
 - [x] Phase 2: 청킹 전략 비교 (구조 기반 vs fixed-size vs semantic)
 - [x] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
 - [x] Phase 4: Reranking (Cross-encoder)
-- [ ] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
+- [x] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
 - [ ] Phase 6: RAGAs 기반 정량 평가
