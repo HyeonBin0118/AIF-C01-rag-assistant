@@ -1,0 +1,22 @@
+[
+  {"question": "실시간 추론의 최대 페이로드 크기는?", "reference": "SageMaker 실시간 추론의 최대 페이로드 크기는 25MB입니다."},
+  {"question": "서버리스 추론의 최대 페이로드 크기는?", "reference": "SageMaker 서버리스 추론의 최대 페이로드 크기는 4MB입니다."},
+  {"question": "비동기 추론의 최대 처리 시간은?", "reference": "SageMaker 비동기 추론의 최대 처리 시간은 1시간(60분)입니다."},
+  {"question": "HNSW에서 m 파라미터가 조절하는 게 뭐야?", "reference": "HNSW의 m 파라미터는 각 벡터가 연결되는 이웃의 개수를 조절합니다."},
+  {"question": "ef_construction 파라미터는 언제 쓰이나?", "reference": "ef_construction은 HNSW 인덱스를 만들 때(빌드 시점) 얼마나 넓게 탐색하며 연결을 구성할지 조절하는 파라미터입니다."},
+  {"question": "S3 Glacier Deep Archive의 최대 복원 시간은?", "reference": "S3 Glacier Deep Archive의 최대 복원 시간은 12시간입니다."},
+  {"question": "RDS의 정확한 풀네임은?", "reference": "RDS는 Relational Database Service의 약자입니다."},
+  {"question": "Route 53이라는 이름이 53인 이유는?", "reference": "DNS가 사용하는 포트 번호가 53번이기 때문에 Route 53이라는 이름이 붙었습니다."},
+  {"question": "PartyRock이 정식 발표된 연도는?", "reference": "PartyRock은 2023년 11월 AWS가 정식 발표했습니다."},
+  {"question": "AWS Artifact가 ISV 보고서를 지원하기 시작한 시점은?", "reference": "AWS Artifact는 2023년 1월부터 ISV(독립 소프트웨어 벤더)의 컴플라이언스 보고서도 제공하기 시작했습니다."},
+  {"question": "Top K 파라미터가 조절하는 것은?", "reference": "Top K는 텍스트 생성 시 각 단계에서 고려할 후보 토큰의 개수를 조절합니다."},
+  {"question": "XGBoost의 X는 무엇의 약자인가?", "reference": "XGBoost의 X는 eXtreme의 약자로, eXtreme Gradient Boosting을 의미합니다."},
+  {"question": "BERT가 학습에 사용하는 방식의 약자는?", "reference": "BERT는 MLM(Masked Language Model) 방식으로 학습됩니다."},
+  {"question": "F1 Score는 어떤 두 지표의 조화평균인가?", "reference": "F1 Score는 Precision과 Recall의 조화평균입니다."},
+  {"question": "Bedrock Guardrails의 필터 정책은 몇 가지인가?", "reference": "Bedrock Guardrails는 Content filters, Denied topics, Word filters, Contextual grounding check의 4가지 필터 정책을 제공합니다."},
+  {"question": "PII 탐지하는 서비스는?", "reference": "PII 탐지에는 Amazon Comprehend, Amazon Macie, Bedrock Guardrails가 사용됩니다."},
+  {"question": "이미지에서 텍스트를 추출하는 서비스는?", "reference": "이미지나 PDF에서 텍스트를 추출하는 서비스는 Amazon Textract입니다."},
+  {"question": "그래프 기반 데이터베이스로 사기 탐지에 쓰이는 서비스는?", "reference": "그래프 기반 데이터베이스로 사기 탐지에 쓰이는 서비스는 Amazon Neptune입니다."},
+  {"question": "모델의 편향과 설명 가능성을 다루는 SageMaker 도구는?", "reference": "SageMaker Clarify가 모델의 편향 탐지와 설명 가능성을 다룹니다."},
+  {"question": "쿠버네티스 기반 컨테이너 오케스트레이션 서비스는?", "reference": "쿠버네티스 기반 컨테이너 오케스트레이션 서비스는 Amazon EKS입니다."}
+]
