@@ -2,7 +2,7 @@
 
 AWS AIF-C01 자격증 스터디 중 정리한 노트(문제 오류 검증·정정 내용 포함)를 기반으로 한 RAG 시스템입니다.
 
-이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완, 쿼리 자체를 최적화하는 기법들 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
+이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완, 쿼리 자체를 최적화하는 기법들, 그리고 파이프라인 전체(검색+생성)의 정량 평가 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
 
 ## 왜 이 프로젝트를 시작했나
 
@@ -28,6 +28,7 @@ documents (PART 단위, 청킹 전략별로 구분)
 - **키워드 검색**: rank_bm25 + kiwipiepy (한국어 형태소 분석)
 - **Reranking**: BAAI/bge-reranker-v2-m3 (Cross-encoder)
 - **쿼리 최적화**: OpenAI API (gpt-4o-mini) — Query Rewriting, HyDE
+- **파이프라인 평가**: RAGAs (Faithfulness, Answer Relevancy, Context Precision, Context Recall)
 - **벤치마크**: 위키피디아 한국어 코퍼스 5만 건 (별도 테이블, 실 서비스 데이터와 분리)
 
 ## 핵심 의사결정
@@ -151,7 +152,7 @@ top-3 기준으로 하이브리드가 단독 방식 대비 5%p 개선(85%→90%)
 
 ### 지표 전환: Recall@k → MRR
 
-처음엔 Phase 2·3과 동일하게 Recall@k로 평가했으나, 하이브리드 검색만으로 이미 대부분 정답이 top-3 안에 들어와 있어 reranking 전후로 Recall 값에 차이가 없었습니다. Recall@k는 "정답이 순위 안에 있는지"만 보는 이진 지표라, "5위였던 정답이 1위로 올라갔다"는 개선을 반영하지 못하는 한계가 있었습니다. 이에 정답이 정확히 몇 위에 나왔는지를 점수화하는 **MRR(Mean Reciprocal Rank, `1/정답순위`의 평균)**로 지표를 전환했습니다.
+처음엔 실험 2·3과 동일하게 Recall@k로 평가했으나, 하이브리드 검색만으로 이미 대부분 정답이 top-3 안에 들어와 있어 reranking 전후로 Recall 값에 차이가 없었습니다. Recall@k는 "정답이 순위 안에 있는지"만 보는 이진 지표라, "5위였던 정답이 1위로 올라갔다"는 개선을 반영하지 못하는 한계가 있었습니다. 이에 정답이 정확히 몇 위에 나왔는지를 점수화하는 **MRR(Mean Reciprocal Rank, `1/정답순위`의 평균)**로 지표를 전환했습니다.
 
 ### 결과
 
@@ -193,6 +194,44 @@ Reranking은 "정답을 top-k 안에 들어오게 하는" 효과보다는, **이
 두 기법 모두 하이브리드 단독보다 개선됐고, 그중 HyDE가 가장 효과적이었습니다(Reranking과 동일한 0.9000 달성). "질문을 그대로 검색하기보다, 질문에 대한 가상의 답변 형태로 변환해서 검색하는 것"이 이 데이터셋에서는 질문을 여러 버전으로 확장하는 것보다 더 유효했다고 해석됩니다. 다만 두 기법 모두 LLM 호출 비용과 지연시간이 추가되므로(질문당 API 호출 1~3회), 실서비스에서는 Reranking처럼 검색 후 단계에 비용을 쓸지, HyDE처럼 검색 전 단계에 비용을 쓸지 트레이드오프를 고려해야 합니다.
 
 **한계**: 동일하게 질문 20개 규모의 소규모 평가입니다.
+
+## 실험 6: RAGAs 기반 정량 평가
+
+### 방법
+
+지금까지는 검색(retrieval) 단계만 평가했지만, 이번엔 **검색+생성을 포함한 RAG 파이프라인 전체**를 평가했습니다. 지금까지 실험한 조합 중 가장 성능이 좋았던 "하이브리드 검색(top-15) → Reranking(top-3)"으로 문서를 찾고, 그 문서를 근거로 LLM(`gpt-4o-mini`)이 답변을 생성하도록 파이프라인을 구성했습니다. 문서에 없는 내용은 "찾을 수 없다"고 답하도록 프롬프트에 명시해 환각을 억제했습니다.
+
+평가는 `RAGAs` 프레임워크로 4개 지표를 측정했습니다.
+
+- **Faithfulness**: 답변이 검색된 문서에 얼마나 근거하는가 (환각 여부)
+- **Answer Relevancy**: 답변이 질문에 얼마나 부합하는가
+- **Context Precision**: 검색된 문서 중 실제로 답변에 유용했던 비율
+- **Context Recall**: 정답에 필요한 정보를 검색이 빠짐없이 담았는가 (질문마다 직접 작성한 정답(reference) 필요)
+
+### 시행착오: 평가 질문셋의 코퍼스 이탈 문제
+
+1차 평가에서 Context Recall과 Faithfulness가 예상보다 낮게 나왔는데, 원인을 추적해보니 평가 질문 2개("HNSW의 m 파라미터", "ef_construction")가 **원본 소스 문서에 애초에 없는 내용**이었습니다. 이 파라미터들은 실험 1(인덱스 벤치마크)에서 직접 실습한 개념이지, AWS AIF-C01 스터디 노트 자체에는 없는 내용이었습니다. RAG 시스템은 이 질문에 "문서에서 찾을 수 없습니다"라고 정직하게 답했는데, 이는 오히려 환각을 방지하는 바람직한 동작이지만 Answer Relevancy 계산 방식상 매우 낮은 점수(0.0)로 처리되어 전체 평균을 왜곡시켰습니다. 두 질문을 원본 문서에 실제로 존재하는 내용으로 교체해 재평가했습니다.
+
+### 결과
+
+| 지표 | 점수 |
+|---|---|
+| Faithfulness | 0.975 |
+| Answer Relevancy | 0.575 |
+| Context Precision | 0.992 |
+| Context Recall | 1.000 |
+
+Context Recall 1.0은 실험 4·5의 MRR 0.90(하이브리드+reranking 조합)보다도 높은 수치인데, RAGAs의 Context Recall이 "top-3 안에 정답이 있는지"만 보는 것이 아니라 "reference 문장을 구성하는 데 필요한 정보가 문맥 안에 있는지"를 LLM이 판단하는 방식이라 평가 방법론 자체가 다르기 때문입니다.
+
+### Answer Relevancy가 상대적으로 낮은 이유
+
+다른 지표 대비 Answer Relevancy(0.575)가 낮은데, 하위 점수 질문들을 직접 확인한 결과 전부 **답변 내용 자체는 정확했습니다**(예: "쿠버네티스 기반 컨테이너 오케스트레이션 서비스는 Amazon EKS입니다" — 완전히 맞는 답). RAGAs의 Answer Relevancy는 "답변을 보고 질문을 역으로 유추해, 원래 질문과의 임베딩 유사도를 계산"하는 방식인데, 본 프로젝트의 답변들이 사실 확인형으로 짧다 보니 역유추가 불안정해지는 경향이 있었습니다. 이는 RAGAs 자체의 알려진 한계로, 답변 정확도 자체의 문제가 아니라 평가 지표와 답변 스타일 간의 궁합 문제로 판단됩니다.
+
+### 결론
+
+Faithfulness 0.975, Context Precision 0.992로 파이프라인 전체가 근거 문서에 충실하게 동작함을 확인했습니다. 다만 이 과정에서 **평가 데이터셋 자체의 타당성 검증이 실험 설계의 일부**임을 확인했습니다 — 코퍼스에 없는 질문을 섞으면 시스템의 정직한 "모른다" 답변이 오히려 지표를 왜곡시킬 수 있다는 점은, RAG 평가에서 평가셋과 코퍼스의 정합성을 먼저 검증해야 한다는 실무적 교훈으로 남았습니다.
+
+**한계**: 질문 20개 규모의 소규모 평가이며, RAGAs 지표 자체도 LLM 기반 판단(gpt-4o-mini)에 의존하므로 절대적인 정답이라기보다는 하나의 참고 지표로 해석하는 것이 적절합니다.
 
 ## 실행 방법
 
@@ -242,6 +281,11 @@ python scripts/evaluate_rerank.py
 
 # 10. (선택) 쿼리 최적화 평가 재현
 python scripts/evaluate_query_optimization.py
+
+# 11. (선택) RAGAs 파이프라인 평가 재현
+python scripts/generate_answers.py
+python scripts/evaluate_ragas.py
+python scripts/inspect_ragas_scores.py
 ```
 
 ## 프로젝트 구조
@@ -258,6 +302,7 @@ AIF-C01-rag-assistant/
 │   ├── raw/                        # 원본 마크다운, 벤치마크 코퍼스 (git 미포함)
 │   ├── eval_questions.json         # 청킹 전략 평가용 질문-정답 쌍
 │   ├── eval_questions_hybrid.json  # 하이브리드/reranking/쿼리최적화 평가용 질문-정답 쌍
+│   ├── eval_questions_ragas.json   # RAGAs 평가용 질문-정답(reference) 쌍
 │   ├── benchmark_results.csv
 │   ├── benchmark_recall_vs_latency.png
 │   ├── chunking_evaluation.csv
@@ -266,7 +311,9 @@ AIF-C01-rag-assistant/
 │   ├── rerank_evaluation.csv
 │   ├── rerank_evaluation_detail.csv
 │   ├── query_optimization_evaluation.csv
-│   └── query_optimization_detail.csv
+│   ├── query_optimization_detail.csv
+│   ├── ragas_dataset.json          # 생성된 답변+컨텍스트 데이터셋
+│   └── ragas_scores.csv
 └── scripts/
     ├── init_db.py
     ├── ingest.py                   # 구조 기반 청킹 (PART → 섹션 → 서비스)
@@ -288,7 +335,10 @@ AIF-C01-rag-assistant/
     ├── evaluate_rerank.py          # MRR 기반 정량 평가
     ├── query_rewrite_search.py     # Multi-query 쿼리 재작성
     ├── hyde_search.py              # HyDE
-    └── evaluate_query_optimization.py
+    ├── evaluate_query_optimization.py
+    ├── generate_answers.py         # 하이브리드+reranking 파이프라인으로 RAGAs용 답변 생성
+    ├── evaluate_ragas.py           # Faithfulness/Answer Relevancy/Context Precision/Recall 평가
+    └── inspect_ragas_scores.py     # 하위 점수 질문 상세 확인
 ```
 
 ## 진행 상황
@@ -298,4 +348,4 @@ AIF-C01-rag-assistant/
 - [x] Phase 3: 하이브리드 검색 (BM25 + 벡터, RRF 직접 구현)
 - [x] Phase 4: Reranking (Cross-encoder)
 - [x] Phase 5: 쿼리 최적화 (Query rewriting, HyDE)
-- [ ] Phase 6: RAGAs 기반 정량 평가
+- [x] Phase 6: RAGAs 기반 정량 평가
