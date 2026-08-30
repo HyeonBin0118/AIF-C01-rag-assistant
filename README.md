@@ -4,6 +4,8 @@ AWS AIF-C01 자격증 스터디 중 정리한 노트(문제 오류 검증·정�
 
 이전에 만든 RAG 프로젝트들(ShopAI, ai-personal-assistant, ai-career-assistant)은 pgvector와 HNSW 인덱스를 "가져다 썼다"면, 이번엔 그 안에서 실제로 무슨 일이 일어나는지 — 인덱스 알고리즘의 동작 원리, 파라미터가 성능에 미치는 영향, 청킹 전략의 효과, 검색 방식 간의 상호보완, 쿼리 자체를 최적화하는 기법들, 그리고 파이프라인 전체(검색+생성)의 정량 평가 — 를 직접 실험하고 숫자로 증명하는 데 목적을 뒀습니다.
 
+![전체 실험 결과 요약](data/summary_all_experiments.png)
+
 ## 왜 이 프로젝트를 시작했나
 
 RAG(Retrieval-Augmented Generation)는 LLM이 답변할 때 학습하지 못한 지식(비공개 문서, 최신 정보 등)을 검색해서 참고하게 만드는 방식입니다. 파인튜닝 없이도 지식을 추가할 수 있고, 근거 문서를 기반으로 답하게 해서 환각(모델이 사실이 아닌 내용을 그럴듯하게 지어내는 현상)을 줄이는 효과도 있습니다.
@@ -133,6 +135,8 @@ top-5까지 넉넉히 보면 세 전략 모두 정답을 놓치지 않지만, to
 | BM25 단독 | 85% (17/20) | 90% (18/20) |
 | 하이브리드(RRF) | 90% (18/20) | 90% (18/20) |
 
+![하이브리드 검색 비교](data/hybrid_search_comparison.png)
+
 **개선 사례** (top-3 기준, 한쪽만으로는 실패했을 질문을 하이브리드가 보완):
 
 - *"XGBoost의 X는 무엇의 약자인가?"* — 벡터 검색은 적중했으나 BM25는 실패. 하이브리드는 벡터 결과를 살려 적중.
@@ -161,6 +165,8 @@ top-3 기준으로 하이브리드가 단독 방식 대비 5%p 개선(85%→90%)
 | 하이브리드 단독 | 0.8500 |
 | 하이브리드 + Reranking | 0.9000 |
 
+![Reranking 전후 비교](data/rerank_comparison.png)
+
 **개선 사례** (하이브리드 순위 → Reranking 후 순위):
 
 - *"BERT가 학습에 사용하는 방식의 약자는?"* — 2위 → 1위
@@ -188,6 +194,8 @@ Reranking은 "정답을 top-k 안에 들어오게 하는" 효과보다는, **이
 | 하이브리드 단독 | 0.8500 |
 | Query Rewriting | 0.8750 |
 | HyDE | 0.9000 |
+
+![쿼리 최적화 비교](data/query_optimization_comparison.png)
 
 ### 결론
 
@@ -220,6 +228,8 @@ Reranking은 "정답을 top-k 안에 들어오게 하는" 효과보다는, **이
 | Answer Relevancy | 0.575 |
 | Context Precision | 0.992 |
 | Context Recall | 1.000 |
+
+![RAGAs 평가 결과](data/ragas_scores_comparison.png)
 
 Context Recall 1.0은 실험 4·5의 MRR 0.90(하이브리드+reranking 조합)보다도 높은 수치인데, RAGAs의 Context Recall이 "top-3 안에 정답이 있는지"만 보는 것이 아니라 "reference 문장을 구성하는 데 필요한 정보가 문맥 안에 있는지"를 LLM이 판단하는 방식이라 평가 방법론 자체가 다르기 때문입니다.
 
@@ -275,17 +285,24 @@ python scripts/plot_chunking_eval.py
 # 8. (선택) 하이브리드 검색 평가 재현
 python scripts/evaluate_hybrid.py
 python scripts/analyze_hybrid_gains.py
+python scripts/plot_hybrid_eval.py
 
 # 9. (선택) Reranking 평가 재현
 python scripts/evaluate_rerank.py
+python scripts/plot_rerank_eval.py
 
 # 10. (선택) 쿼리 최적화 평가 재현
 python scripts/evaluate_query_optimization.py
+python scripts/plot_query_opt_eval.py
 
 # 11. (선택) RAGAs 파이프라인 평가 재현
 python scripts/generate_answers.py
 python scripts/evaluate_ragas.py
 python scripts/inspect_ragas_scores.py
+python scripts/plot_ragas_eval.py
+
+# 12. (선택) 전체 실험 종합 비교 그래프
+python scripts/plot_summary.py
 ```
 
 ## 프로젝트 구조
@@ -308,12 +325,17 @@ AIF-C01-rag-assistant/
 │   ├── chunking_evaluation.csv
 │   ├── chunking_strategy_comparison.png
 │   ├── hybrid_evaluation.csv
+│   ├── hybrid_search_comparison.png
 │   ├── rerank_evaluation.csv
 │   ├── rerank_evaluation_detail.csv
+│   ├── rerank_comparison.png
 │   ├── query_optimization_evaluation.csv
 │   ├── query_optimization_detail.csv
+│   ├── query_optimization_comparison.png
 │   ├── ragas_dataset.json          # 생성된 답변+컨텍스트 데이터셋
-│   └── ragas_scores.csv
+│   ├── ragas_scores.csv
+│   ├── ragas_scores_comparison.png
+│   └── summary_all_experiments.png # 전체 실험 종합 비교
 └── scripts/
     ├── init_db.py
     ├── ingest.py                   # 구조 기반 청킹 (PART → 섹션 → 서비스)
@@ -331,14 +353,19 @@ AIF-C01-rag-assistant/
     ├── hybrid_search.py            # BM25 + 벡터 + RRF 하이브리드 검색
     ├── evaluate_hybrid.py
     ├── analyze_hybrid_gains.py
+    ├── plot_hybrid_eval.py
     ├── rerank_search.py            # Cross-encoder 기반 reranking
     ├── evaluate_rerank.py          # MRR 기반 정량 평가
+    ├── plot_rerank_eval.py
     ├── query_rewrite_search.py     # Multi-query 쿼리 재작성
     ├── hyde_search.py              # HyDE
     ├── evaluate_query_optimization.py
+    ├── plot_query_opt_eval.py
     ├── generate_answers.py         # 하이브리드+reranking 파이프라인으로 RAGAs용 답변 생성
     ├── evaluate_ragas.py           # Faithfulness/Answer Relevancy/Context Precision/Recall 평가
-    └── inspect_ragas_scores.py     # 하위 점수 질문 상세 확인
+    ├── inspect_ragas_scores.py     # 하위 점수 질문 상세 확인
+    ├── plot_ragas_eval.py
+    └── plot_summary.py             # 전체 실험 종합 비교 그래프
 ```
 
 ## 진행 상황
